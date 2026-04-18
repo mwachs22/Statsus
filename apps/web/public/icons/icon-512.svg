@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#1e293b"/>
+  <text x="256" y="230" font-family="system-ui, -apple-system, sans-serif" font-size="80" font-weight="900" fill="white" text-anchor="middle" letter-spacing="-3">STAT</text>
+  <text x="256" y="330" font-family="system-ui, -apple-system, sans-serif" font-size="80" font-weight="900" fill="#60a5fa" text-anchor="middle" letter-spacing="-3">SUS</text>
+</svg>
