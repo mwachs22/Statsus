@@ -48,10 +48,6 @@ async function start() {
   await fastify.register(fastifyJWT, {
     secret: process.env.JWT_SECRET!,
     cookie: { cookieName: 'token', signed: false },
-    trusted: (request) => {
-      // Allow the server to verify tokens signed by itself
-      return request.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production';
-    },
   });
 
   await fastify.register(fastifyCors, {
