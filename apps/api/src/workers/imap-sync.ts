@@ -22,7 +22,7 @@ export async function syncAccount(account: AccountRow): Promise<void> {
     await validateHostname(account.smtp_host);
   }
 
-  const raw = decrypt(account.encrypted_credential as Buffer);
+  const raw = decrypt(account.encrypted_credential);
   const credential = JSON.parse(raw) as { username: string; password: string };
 
   const client = new ImapFlow({
@@ -72,7 +72,8 @@ async function syncFolder(
       .where(and(eq(sync_state.account_id, account.id), eq(sync_state.folder, folderName)))
       .limit(1);
 
-    const uidValidity = (client.mailbox as { uidValidity?: number }).uidValidity;
+    const mailbox = client.mailbox as { uidValidity?: bigint };
+    const uidValidity = mailbox.uidValidity ? Number(mailbox.uidValidity) : 0;
 
     // Reset if uidValidity changed (mailbox was recreated)
     const lastUid =
@@ -155,7 +156,7 @@ async function syncFolder(
         text_body: parsed.text ?? null,
         html_body: typeof parsed.html === 'string' ? parsed.html : null,
         flags: [...(msg.flags ?? [])],
-        date: parsed.date ?? msg.internalDate ?? new Date(),
+        date: parsed.date ?? (msg.internalDate instanceof Date ? msg.internalDate : new Date(msg.internalDate ?? Date.now())),
         size: msg.source.length,
         uid: msg.uid,
         message_id: rawMessageId,

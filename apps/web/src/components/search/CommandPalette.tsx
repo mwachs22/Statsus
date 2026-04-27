@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { useSearch } from '../../hooks/useSearch';
-import type { SearchResults } from '../../lib/api';
 import { useNavigationStore } from '../../store/navigation';
 
 interface CommandPaletteProps {
@@ -14,7 +13,7 @@ function formatDate(iso: string): string {
 
 export function CommandPalette({ onClose, onSelectThread }: CommandPaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { results, loading, search, clear } = useSearch();
+  const { results, loading, search } = useSearch();
   const setSection = useNavigationStore((s) => s.setSection);
 
   useEffect(() => {

@@ -16,7 +16,7 @@ interface SendOptions {
 }
 
 export async function sendEmail(account: AccountRow, opts: SendOptions): Promise<string> {
-  const raw = decrypt(account.encrypted_credential as Buffer);
+  const raw = decrypt(account.encrypted_credential);
   const credential = JSON.parse(raw) as { username: string; password: string };
 
   const port = account.smtp_port ?? 587;

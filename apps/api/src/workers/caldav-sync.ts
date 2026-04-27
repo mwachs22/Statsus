@@ -1,5 +1,5 @@
 import { createDAVClient } from 'tsdav';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { db } from '../lib/db';
 import { mail_accounts, calendar_events, dav_sync_state } from '../db/schema';
 import { decrypt } from '../lib/crypto';
@@ -17,7 +17,7 @@ export async function syncCalDAV(account: AccountRow): Promise<void> {
   // SSRF guard: validate the CalDAV URL before connecting
   await validateEndpointUrl(account.caldav_url);
 
-  const raw = decrypt(account.encrypted_credential as Buffer);
+  const raw = decrypt(account.encrypted_credential);
   const credential = JSON.parse(raw) as { username: string; password: string };
 
   const client = await createDAVClient({
@@ -35,7 +35,7 @@ export async function syncCalDAV(account: AccountRow): Promise<void> {
   for (const calendar of calendars) {
     if (!calendar.url) continue;
     try {
-      await syncOneCalendar(client, account, calendar, start, end);
+      await syncOneCalendar(client, account, calendar as { url: string; ctag?: string; displayName?: string }, start, end);
     } catch (err) {
       console.error(`[caldav] calendar "${calendar.displayName}" failed:`, err);
     }
@@ -106,24 +106,24 @@ async function syncOneCalendar(
   for (let i = 0; i < toInsert.length; i += 50) {
     const batch = toInsert.slice(i, i + 50);
     if (batch.length === 0) continue;
-    await db
-      .insert(calendar_events)
-      .values(batch)
-      .onConflictDoUpdate({
-        target: [calendar_events.account_id, calendar_events.calendar_uid],
-        set: {
-          summary: calendar_events.summary,
-          description: calendar_events.description,
-          location: calendar_events.location,
-          start_time: calendar_events.start_time,
-          end_time: calendar_events.end_time,
-          all_day: calendar_events.all_day,
-          attendees: calendar_events.attendees,
-          status: calendar_events.status,
-          etag: calendar_events.etag,
-          raw_ical: calendar_events.raw_ical,
-        },
-      });
+      await db
+        .insert(calendar_events)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [calendar_events.account_id, calendar_events.calendar_uid],
+          set: {
+            summary: sql`excluded.summary`,
+            description: sql`excluded.description`,
+            location: sql`excluded.location`,
+            start_time: sql`excluded.start_time`,
+            end_time: sql`excluded.end_time`,
+            all_day: sql`excluded.all_day`,
+            attendees: sql`excluded.attendees`,
+            status: sql`excluded.status`,
+            etag: sql`excluded.etag`,
+            raw_ical: sql`excluded.raw_ical`,
+          },
+        });
   }
 
   // Update sync state

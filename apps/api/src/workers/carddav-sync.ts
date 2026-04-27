@@ -1,5 +1,5 @@
 import { createDAVClient } from 'tsdav';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { db } from '../lib/db';
 import { mail_accounts, contacts, dav_sync_state } from '../db/schema';
 import { decrypt } from '../lib/crypto';
@@ -14,7 +14,7 @@ export async function syncCardDAV(account: AccountRow): Promise<void> {
   // SSRF guard: validate the CardDAV URL before connecting
   await validateEndpointUrl(account.carddav_url);
 
-  const raw = decrypt(account.encrypted_credential as Buffer);
+  const raw = decrypt(account.encrypted_credential);
   const credential = JSON.parse(raw) as { username: string; password: string };
 
   const client = await createDAVClient({
@@ -29,7 +29,7 @@ export async function syncCardDAV(account: AccountRow): Promise<void> {
   for (const aBook of addressBooks) {
     if (!aBook.url) continue;
     try {
-      await syncOneAddressBook(client, account, aBook);
+      await syncOneAddressBook(client, account, aBook as { url: string; ctag?: string; displayName?: string });
     } catch (err) {
       console.error(`[carddav] address book "${aBook.displayName}" failed:`, err);
     }
@@ -97,25 +97,25 @@ async function syncOneAddressBook(
   for (let i = 0; i < toInsert.length; i += 100) {
     const batch = toInsert.slice(i, i + 100);
     if (batch.length === 0) continue;
-    await db
-      .insert(contacts)
-      .values(batch)
-      .onConflictDoUpdate({
-        target: [contacts.account_id, contacts.uid],
-        set: {
-          full_name: contacts.full_name,
-          first_name: contacts.first_name,
-          last_name: contacts.last_name,
-          emails: contacts.emails,
-          phones: contacts.phones,
-          organization: contacts.organization,
-          title: contacts.title,
-          photo_url: contacts.photo_url,
-          notes: contacts.notes,
-          etag: contacts.etag,
-          raw_vcard: contacts.raw_vcard,
-        },
-      });
+      await db
+        .insert(contacts)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [contacts.account_id, contacts.uid],
+          set: {
+            full_name: sql`excluded.full_name`,
+            first_name: sql`excluded.first_name`,
+            last_name: sql`excluded.last_name`,
+            emails: sql`excluded.emails`,
+            phones: sql`excluded.phones`,
+            organization: sql`excluded.organization`,
+            title: sql`excluded.title`,
+            photo_url: sql`excluded.photo_url`,
+            notes: sql`excluded.notes`,
+            etag: sql`excluded.etag`,
+            raw_vcard: sql`excluded.raw_vcard`,
+          },
+        });
   }
 
   if (state) {

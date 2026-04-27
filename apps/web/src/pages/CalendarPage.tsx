@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useCalendarEvents, groupEventsByDate } from '../hooks/useCalendar';
 import { MonthGrid } from '../components/calendar/MonthGrid';
 import { EventModal } from '../components/calendar/EventModal';
+import type { CalendarEvent } from '../lib/api';
 
 interface CalendarPageProps {
   accountId: string | null;

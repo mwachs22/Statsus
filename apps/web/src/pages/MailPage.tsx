@@ -21,7 +21,7 @@ function EmptyThreadState({ hasAccounts }: { hasAccounts: boolean }) {
           <p className="text-slate-600 font-medium">Select a conversation</p>
           <p className="text-sm text-slate-400 mt-1">or</p>
           <button
-            onClick={openCompose}
+            onClick={() => openCompose()}
             className="mt-3 text-sm text-blue-600 hover:underline"
           >
             Compose a new message

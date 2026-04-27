@@ -54,7 +54,7 @@ function TodoItem({
       </div>
 
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-        <Flag className={`w-3.5 h-3.5 ${PRIORITY_COLOR[todo.priority]}`} title={PRIORITY_LABEL[todo.priority]} />
+        <Flag className={`w-3.5 h-3.5 ${PRIORITY_COLOR[todo.priority]}`} aria-label={PRIORITY_LABEL[todo.priority]} />
         {todo.linked_message_id && onNavigate && (
           <button onClick={onNavigate} className="text-slate-400 hover:text-blue-500 transition" title="Go to message">
             <ExternalLink className="w-3.5 h-3.5" />

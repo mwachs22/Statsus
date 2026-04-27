@@ -9,17 +9,19 @@ function getKey(): Buffer {
 }
 
 // Layout: [16 bytes IV] [16 bytes auth tag] [N bytes ciphertext]
-export function encrypt(plain: string): Buffer {
+// Encoded as base64 for text column storage.
+export function encrypt(plain: string): string {
   const key = getKey();
   const iv = randomBytes(16);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
   const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, encrypted]);
+  return Buffer.concat([iv, tag, encrypted]).toString('base64');
 }
 
-export function decrypt(buf: Buffer): string {
+export function decrypt(encoded: string): string {
   const key = getKey();
+  const buf = Buffer.from(encoded, 'base64');
   const iv = buf.subarray(0, 16);
   const tag = buf.subarray(16, 32);
   const data = buf.subarray(32);

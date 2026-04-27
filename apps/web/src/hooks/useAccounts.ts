@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react';
-import { api, type Account } from '../lib/api';
+import { api } from '../lib/api';
 import { useMailStore } from '../store/mail';
 import { useAccountListStore } from '../store/accounts';
 

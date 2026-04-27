@@ -36,7 +36,7 @@ async function callAI(
     (config.provider === 'ollama' ? 'http://localhost:11434' : 'https://openrouter.ai');
   const url = `${baseUrl}/v1/chat/completions`;
 
-  const apiKey = config.encrypted_api_key ? decrypt(config.encrypted_api_key as Buffer) : '';
+  const apiKey = config.encrypted_api_key ? decrypt(config.encrypted_api_key) : '';
 
   const res = await fetch(url, {
     method: 'POST',

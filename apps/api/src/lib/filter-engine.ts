@@ -108,7 +108,7 @@ async function applyAction(
         .limit(1);
       if (account) {
         try {
-          const raw = decrypt(account.encrypted_credential as Buffer);
+          const raw = decrypt(account.encrypted_credential);
           const credential = JSON.parse(raw) as { username: string; password: string };
           const port = account.smtp_port ?? 587;
           const transporter = nodemailer.createTransport({

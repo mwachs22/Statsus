@@ -114,14 +114,14 @@ export function FiltersPage() {
       {/* Editor modal */}
       {editing === 'new' && (
         <FilterEditor
-          onSave={createFilter}
+          onSave={(data) => { createFilter(data); return Promise.resolve(); }}
           onClose={() => setEditing(null)}
         />
       )}
       {editing && editing !== 'new' && (
         <FilterEditor
           initial={editing}
-          onSave={(data) => updateFilter(editing.id, data)}
+          onSave={(data) => { updateFilter(editing.id, data); return Promise.resolve(); }}
           onClose={() => setEditing(null)}
         />
       )}
