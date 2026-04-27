@@ -7,12 +7,27 @@ import { users, mail_accounts } from '../db/schema';
 
 const RegisterBody = z.object({
   email: z.string().email(),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain an uppercase letter')
+    .regex(/[a-z]/, 'Password must contain a lowercase letter')
+    .regex(/[0-9]/, 'Password must contain a number')
+    .regex(/[^A-Za-z0-9]/, 'Password must contain a special character'),
 });
 
 const LoginBody = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+});
+
+const ChangePasswordBody = z.object({
+  current_password: z.string().min(1),
+  new_password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain an uppercase letter')
+    .regex(/[a-z]/, 'Password must contain a lowercase letter')
+    .regex(/[0-9]/, 'Password must contain a number')
+    .regex(/[^A-Za-z0-9]/, 'Password must contain a special character'),
 });
 
 const COOKIE_OPTS = {
@@ -58,7 +73,6 @@ export async function authRoutes(fastify: FastifyInstance) {
       .values({ email, password_hash })
       .returning({ id: users.id, email: users.email });
 
-    // New user has no accounts yet
     const token = await reply.jwtSign({ id: user.id, email: user.email, account_ids: [] }, JWT_OPTS);
     reply.setCookie('token', token, COOKIE_OPTS);
     return reply.code(201).send({ user });
@@ -84,14 +98,55 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
 
     const account_ids = await getAccountIds(user.id);
-    const token = await reply.jwtSign({ id: user.id, email: user.email, account_ids }, JWT_OPTS);
+
+    // Include last_logout_at in the JWT so auth decorator can check it
+    const token = await reply.jwtSign({
+      id: user.id,
+      email: user.email,
+      account_ids,
+      last_logout_at: user.last_logout_at?.toISOString() ?? null,
+    }, JWT_OPTS);
+
     reply.setCookie('token', token, COOKIE_OPTS);
     return { user: { id: user.id, email: user.email } };
   });
 
-  fastify.post('/api/auth/logout', async (_request, reply) => {
+  fastify.post('/api/auth/logout', {
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    // Invalidate all existing tokens by updating last_logout_at
+    await db.update(users)
+      .set({ last_logout_at: new Date() })
+      .where(eq(users.id, request.user.id));
+
     reply.clearCookie('token', { path: '/' });
     return { ok: true };
+  });
+
+  fastify.post('/api/auth/change-password', {
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const parsed = ChangePasswordBody.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid input', details: parsed.error.flatten() });
+    }
+
+    const [user] = await db.select().from(users).where(eq(users.id, request.user.id)).limit(1);
+    if (!user) return reply.code(404).send({ error: 'User not found' });
+
+    const valid = await bcrypt.compare(parsed.data.current_password, user.password_hash);
+    if (!valid) {
+      return reply.code(401).send({ error: 'Current password is incorrect' });
+    }
+
+    const password_hash = await bcrypt.hash(parsed.data.new_password, 12);
+    await db.update(users)
+      .set({ password_hash, last_logout_at: new Date() })
+      .where(eq(users.id, request.user.id));
+
+    // Force re-login
+    reply.clearCookie('token', { path: '/' });
+    return { ok: true, message: 'Password changed. Please log in again.' };
   });
 
   fastify.get(
@@ -108,10 +163,19 @@ export async function authRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const account_ids = await getAccountIds(request.user.id);
-      const token = await reply.jwtSign(
-        { id: request.user.id, email: request.user.email, account_ids },
-        JWT_OPTS
-      );
+
+      // Re-fetch user to get current last_logout_at
+      const [user] = await db.select()
+        .from(users)
+        .where(eq(users.id, request.user.id))
+        .limit(1);
+
+      const token = await reply.jwtSign({
+        id: request.user.id,
+        email: request.user.email,
+        account_ids,
+        last_logout_at: user?.last_logout_at?.toISOString() ?? null,
+      }, JWT_OPTS);
       reply.setCookie('token', token, COOKIE_OPTS);
       return { ok: true };
     }

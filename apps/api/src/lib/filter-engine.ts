@@ -1,6 +1,8 @@
 import { eq, and, asc, sql } from 'drizzle-orm';
 import { db } from './db';
-import { filters, messages } from '../db/schema';
+import { filters, messages, mail_accounts } from '../db/schema';
+import { decrypt } from './crypto';
+import nodemailer from 'nodemailer';
 
 // Mirror of shared types — avoids a cross-package dep in the API build
 type FilterField = 'from' | 'to' | 'subject' | 'body';
@@ -32,6 +34,7 @@ interface EvaluableMessage {
   subject: string | null;
   body_preview: string | null;
   text_body: string | null;
+  account_id?: string;
 }
 
 function getField(msg: EvaluableMessage, field: FilterRule['field']): string {
@@ -68,32 +71,65 @@ function matchesGroup(msg: EvaluableMessage, group: FilterConditionGroup): boole
   return group.logic === 'AND' ? results.every(Boolean) : results.some(Boolean);
 }
 
-async function applyAction(action: FilterAction, messageId: string): Promise<void> {
+async function applyAction(
+  action: FilterAction,
+  msg: EvaluableMessage
+): Promise<void> {
   switch (action.type) {
     case 'mark_read':
       await db.update(messages).set({
         flags: sql`array_append(array_remove(flags, '\\Seen'), '\\Seen')`,
-      }).where(eq(messages.id, messageId));
+      }).where(eq(messages.id, msg.id));
       break;
 
     case 'label':
       await db.update(messages).set({
         flags: sql`array_append(flags, ${`$label:${action.value}`})`,
-      }).where(eq(messages.id, messageId));
+      }).where(eq(messages.id, msg.id));
       break;
 
     case 'archive':
-      await db.update(messages).set({ folder: 'Archived' }).where(eq(messages.id, messageId));
+      await db.update(messages).set({ folder: 'Archived' }).where(eq(messages.id, msg.id));
       break;
 
     case 'delete':
-      await db.update(messages).set({ folder: 'Trash' }).where(eq(messages.id, messageId));
+      await db.update(messages).set({ folder: 'Trash' }).where(eq(messages.id, msg.id));
       break;
 
     case 'stop_processing':
-    case 'forward':
-      // forward is deferred; stop_processing is handled by the loop caller
       break;
+
+    case 'forward': {
+      // Forward the message using the message's own account SMTP credentials
+      const [account] = await db
+        .select()
+        .from(mail_accounts)
+        .where(eq(mail_accounts.id, msg.account_id ?? ''))
+        .limit(1);
+      if (account) {
+        try {
+          const raw = decrypt(account.encrypted_credential as Buffer);
+          const credential = JSON.parse(raw) as { username: string; password: string };
+          const port = account.smtp_port ?? 587;
+          const transporter = nodemailer.createTransport({
+            host: account.smtp_host!,
+            port,
+            secure: port === 465,
+            auth: { user: credential.username, pass: credential.password },
+            tls: { rejectUnauthorized: process.env.NODE_ENV === 'production' },
+          });
+          await transporter.sendMail({
+            from: account.email,
+            to: action.value,
+            subject: `Fwd: ${msg.subject ?? '(no subject)'}`,
+            text: msg.text_body ?? msg.body_preview ?? '',
+          });
+        } catch (err) {
+          console.error(`[filter-engine] forward failed for message ${msg.id}:`, err);
+        }
+      }
+      break;
+    }
   }
 }
 
@@ -129,7 +165,7 @@ export async function applyFiltersToMessages(
       const actions = filter.actions as FilterAction[];
       let stop = false;
       for (const action of actions) {
-        await applyAction(action, msg.id);
+        await applyAction(action, msg);
         if (action.type === 'stop_processing') { stop = true; break; }
       }
       if (stop) break;

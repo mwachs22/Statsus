@@ -7,6 +7,7 @@ import { mail_accounts } from '../db/schema';
 import { encrypt } from '../lib/crypto';
 import { syncAccount } from '../workers/imap-sync';
 import { assertAccountScope } from '../lib/assert-account';
+import { validateHostname } from '../lib/ssrf-guard';
 
 const AddAccountBody = z.object({
   email: z.string().email(),
@@ -16,8 +17,8 @@ const AddAccountBody = z.object({
   smtp_port: z.number().int().default(587),
   username: z.string().min(1),
   password: z.string().min(1),
-  caldav_url: z.string().url().optional(),
-  carddav_url: z.string().url().optional(),
+  caldav_url: z.string().url().optional().or(z.literal('')),
+  carddav_url: z.string().url().optional().or(z.literal('')),
 });
 
 async function testImapConnection(
@@ -80,6 +81,30 @@ export async function accountRoutes(fastify: FastifyInstance) {
 
       const { email, imap_host, imap_port, smtp_host, smtp_port, username, password, caldav_url, carddav_url } = parsed.data;
 
+      // SSRF guard: validate hostnames before connecting
+      try {
+        await validateHostname(imap_host);
+        await validateHostname(smtp_host);
+      } catch (err) {
+        return reply.code(400).send({ error: (err as Error).message });
+      }
+
+      // Deduplication: check if this email+user combo already exists
+      const existingAccount = await db
+        .select({ id: mail_accounts.id })
+        .from(mail_accounts)
+        .where(
+          and(
+            eq(mail_accounts.user_id, request.user.id),
+            eq(mail_accounts.email, email)
+          )
+        )
+        .limit(1);
+
+      if (existingAccount.length > 0) {
+        return reply.code(409).send({ error: 'This email account is already configured' });
+      }
+
       // Test IMAP credentials before storing
       try {
         await testImapConnection(imap_host, imap_port, username, password);
@@ -109,8 +134,8 @@ export async function accountRoutes(fastify: FastifyInstance) {
           imap_port,
           smtp_host,
           smtp_port,
-          caldav_url: caldav_url ?? null,
-          carddav_url: carddav_url ?? null,
+          caldav_url: caldav_url || null,
+          carddav_url: carddav_url || null,
           encrypted_credential: encrypted,
           is_default: existing.length === 0,
           status: 'active',

@@ -96,7 +96,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
         await validateEndpointUrl(endpoint_url);
       }
 
-      const update: Partial<typeof ai_configs.$inferInsert> = {
+      const update: Record<string, unknown> = {
         ...rest,
         endpoint_url:  endpoint_url || null,
         temperature:   String(rest.temperature),
@@ -108,7 +108,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
 
       const [cfg] = await db
         .insert(ai_configs)
-        .values({ user_id: request.user.id, ...update })
+        .values({ user_id: request.user.id, ...update } as typeof ai_configs.$inferInsert)
         .onConflictDoUpdate({ target: ai_configs.user_id, set: update })
         .returning();
 

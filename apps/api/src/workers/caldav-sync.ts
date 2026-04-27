@@ -4,6 +4,7 @@ import { db } from '../lib/db';
 import { mail_accounts, calendar_events, dav_sync_state } from '../db/schema';
 import { decrypt } from '../lib/crypto';
 import { parseICS } from '../lib/ical-parser';
+import { validateEndpointUrl } from '../lib/ssrf-guard';
 
 type AccountRow = typeof mail_accounts.$inferSelect;
 
@@ -12,6 +13,9 @@ const SYNC_WINDOW_FUTURE_DAYS = 365; // 1 year forward
 
 export async function syncCalDAV(account: AccountRow): Promise<void> {
   if (!account.caldav_url) return;
+
+  // SSRF guard: validate the CalDAV URL before connecting
+  await validateEndpointUrl(account.caldav_url);
 
   const raw = decrypt(account.encrypted_credential as Buffer);
   const credential = JSON.parse(raw) as { username: string; password: string };

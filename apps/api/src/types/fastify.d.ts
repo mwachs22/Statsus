@@ -3,8 +3,8 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
-    payload: { id: string; email: string; account_ids: string[] };
-    user: { id: string; email: string; account_ids: string[] };
+    payload: { id: string; email: string; account_ids: string[]; last_logout_at?: string | null };
+    user: { id: string; email: string; account_ids: string[]; last_logout_at?: string | null };
   }
 }
 

@@ -37,11 +37,52 @@ function isPrivateAddress(addr: string): boolean {
 }
 
 /**
+ * Validates a hostname against SSRF risks — private IPs, loopback,
+ * bare hostnames, and internal TLDs. Used for IMAP/SMTP/CalDAV/CardDAV.
+ *
+ * Allowlisted: `host.docker.internal` (Docker Desktop).
+ */
+export async function validateHostname(hostname: string): Promise<void> {
+  const lower = hostname.toLowerCase();
+
+  if (lower === 'host.docker.internal') return;
+
+  if (lower === 'localhost') {
+    throw ssrfError('Hostname must not target localhost');
+  }
+
+  if (lower.startsWith('127.') || lower.startsWith('10.') ||
+      lower.startsWith('192.168.') || lower.startsWith('169.254.') ||
+      lower.startsWith('172.')) {
+    // Could be a private IPv4 literal — resolve first, check later
+  }
+
+  // Bare hostname (no dots and not an IP) = likely Docker service name
+  if (!lower.includes('.') && !/^\d+\.\d+\.\d+\.\d+$/.test(lower)) {
+    throw ssrfError('Hostname must be a fully-qualified domain name or IP address');
+  }
+
+  if (lower.endsWith('.local') || lower.endsWith('.internal')) {
+    throw ssrfError('Hostname must not target .local or .internal hostnames');
+  }
+
+  // DNS resolution + private IP check
+  let address: string;
+  try {
+    const result = await dns.promises.lookup(hostname, { verbatim: true });
+    address = result.address;
+  } catch {
+    throw ssrfError('Hostname could not be resolved');
+  }
+
+  if (isPrivateAddress(address)) {
+    throw ssrfError('Hostname must not resolve to a private or internal IP address');
+  }
+}
+
+/**
  * Validates that a user-supplied URL does not target private/internal infrastructure.
  * Throws a 400-coded Error if the URL is unsafe.
- *
- * Allowlisted: `host.docker.internal` (Docker Desktop's well-known hostname for
- * reaching the host machine — used by Ollama users per the docs).
  */
 export async function validateEndpointUrl(rawUrl: string): Promise<void> {
   let parsed: URL;

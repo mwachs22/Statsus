@@ -69,7 +69,6 @@ POSTGRES_DB=statsus
 DATABASE_URL=postgresql://statsus:${pg_pass}@db:5432/statsus
 JWT_SECRET=${jwt_secret}
 CREDENTIAL_ENCRYPTION_KEY=${enc_key}
-ADMIN_PASSWORD=${ADMIN_PASS}
 NODE_ENV=production
 PORT=3000
 LOG_LEVEL=warn

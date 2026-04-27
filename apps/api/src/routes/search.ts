@@ -11,6 +11,9 @@ export async function searchRoutes(fastify: FastifyInstance) {
       if (!q || q.trim().length < 2) {
         return reply.code(400).send({ error: 'Query must be at least 2 characters' });
       }
+      if (q.length > 200) {
+        return reply.code(400).send({ error: 'Query must be 200 characters or fewer' });
+      }
 
       const term = q.trim();
       const like = `%${term}%`;

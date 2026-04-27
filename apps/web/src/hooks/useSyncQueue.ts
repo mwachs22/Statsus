@@ -9,10 +9,15 @@ import { useNetworkStatus } from './useNetworkStatus';
  */
 export function useSyncQueue() {
   const online  = useNetworkStatus();
-  const [pending, setPending] = useState(() => queueSize());
+  const [pending, setPending] = useState(0);
+
+  // Load initial queue size
+  useEffect(() => {
+    queueSize().then(setPending).catch(() => setPending(0));
+  }, []);
 
   const drain = useCallback(async () => {
-    const queue = getQueue();
+    const queue = await getQueue();
     if (queue.length === 0) return;
 
     for (const item of queue) {
@@ -24,15 +29,15 @@ export function useSyncQueue() {
           body:        item.body,
         });
         if (res.ok) {
-          dequeue(item.id);
+          await dequeue(item.id);
           setPending((n) => Math.max(0, n - 1));
         }
       } catch {
-        // Still offline or server error — leave in queue, try again next reconnect
         break;
       }
     }
-    setPending(queueSize());
+    const remaining = await queueSize();
+    setPending(remaining);
   }, []);
 
   // Drain immediately when we come back online

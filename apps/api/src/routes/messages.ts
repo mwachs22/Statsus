@@ -162,7 +162,10 @@ export async function messageRoutes(fastify: FastifyInstance) {
   // Send an email
   fastify.post(
     '/api/messages/send',
-    { preHandler: [fastify.authenticate] },
+    {
+      preHandler: [fastify.authenticate],
+      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    },
     async (request, reply) => {
       const parsed = SendBody.safeParse(request.body);
       if (!parsed.success) {

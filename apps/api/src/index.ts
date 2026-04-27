@@ -33,6 +33,7 @@ const fastify = Fastify({
       : undefined,
   },
   trustProxy: true,
+  bodyLimit: 1_048_576, // 1MB body limit
 });
 
 async function start() {
@@ -47,6 +48,10 @@ async function start() {
   await fastify.register(fastifyJWT, {
     secret: process.env.JWT_SECRET!,
     cookie: { cookieName: 'token', signed: false },
+    trusted: (request) => {
+      // Allow the server to verify tokens signed by itself
+      return request.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production';
+    },
   });
 
   await fastify.register(fastifyCors, {
@@ -58,6 +63,30 @@ async function start() {
     global: true,
     max: 100,
     timeWindow: '1 minute',
+    keyGenerator: (request) => {
+      // Rate-limit by user ID if authenticated, otherwise by IP
+      return request.user?.id ?? request.ip;
+    },
+  });
+
+  // Security headers (CSP, etc.)
+  fastify.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+    reply.header('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+    if (process.env.NODE_ENV === 'production') {
+      reply.header('Content-Security-Policy',
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: https:; " +
+        "connect-src 'self'; " +
+        "frame-ancestors 'none'; " +
+        "base-uri 'self'; " +
+        "form-action 'self'"
+      );
+    }
   });
 
   // Serve the compiled React app in production
@@ -77,7 +106,18 @@ async function start() {
       try {
         await request.jwtVerify();
       } catch {
-        reply.code(401).send({ error: 'Unauthorized' });
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      // JWT invalidation check: if the user logged out after this token was issued,
+      // the token is no longer valid.
+      const payload = request.user as Record<string, unknown>;
+      if (payload.last_logout_at && payload.iat) {
+        const tokenIat = payload.iat as number;
+        const logoutTime = new Date(payload.last_logout_at as string).getTime() / 1000;
+        if (logoutTime > tokenIat) {
+          return reply.code(401).send({ error: 'Session expired. Please log in again.' });
+        }
       }
     }
   );

@@ -4,11 +4,15 @@ import { db } from '../lib/db';
 import { mail_accounts, contacts, dav_sync_state } from '../db/schema';
 import { decrypt } from '../lib/crypto';
 import { parseVCard } from '../lib/vcard-parser';
+import { validateEndpointUrl } from '../lib/ssrf-guard';
 
 type AccountRow = typeof mail_accounts.$inferSelect;
 
 export async function syncCardDAV(account: AccountRow): Promise<void> {
   if (!account.carddav_url) return;
+
+  // SSRF guard: validate the CardDAV URL before connecting
+  await validateEndpointUrl(account.carddav_url);
 
   const raw = decrypt(account.encrypted_credential as Buffer);
   const credential = JSON.parse(raw) as { username: string; password: string };

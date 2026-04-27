@@ -6,6 +6,7 @@ import { mail_accounts, messages, sync_state } from '../db/schema';
 import { decrypt } from '../lib/crypto';
 import { resolveThreadId } from './thread-builder';
 import { applyFiltersToMessages } from '../lib/filter-engine';
+import { validateHostname } from '../lib/ssrf-guard';
 
 type AccountRow = typeof mail_accounts.$inferSelect;
 
@@ -13,6 +14,14 @@ const FOLDERS_TO_SYNC = ['INBOX', 'Sent', 'Drafts', 'Trash'];
 const INITIAL_FETCH_LIMIT = 200; // cap first sync to avoid huge imports
 
 export async function syncAccount(account: AccountRow): Promise<void> {
+  // SSRF guard: validate IMAP/SMTP hostnames before connecting
+  if (account.imap_host) {
+    await validateHostname(account.imap_host);
+  }
+  if (account.smtp_host) {
+    await validateHostname(account.smtp_host);
+  }
+
   const raw = decrypt(account.encrypted_credential as Buffer);
   const credential = JSON.parse(raw) as { username: string; password: string };
 
@@ -160,7 +169,7 @@ async function syncFolder(
     if (fetched.length > 0) {
       const insertedForFilters: Array<{
         id: string; from_addr: string | null; to_addr: string | null;
-        subject: string | null; body_preview: string | null; text_body: string | null;
+        subject: string | null; body_preview: string | null; text_body: string | null; account_id: string;
       }> = [];
 
       // Insert in batches of 50; capture IDs of INBOX messages for filter evaluation
@@ -179,6 +188,7 @@ async function syncFolder(
               subject: src.subject ?? null,
               body_preview: src.body_preview ?? null,
               text_body: src.text_body ?? null,
+              account_id: account.id,
             });
           }
         }
